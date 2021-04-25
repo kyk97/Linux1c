@@ -3,12 +3,12 @@
  * main.c
  * Copyright (C) 2021 kyk_97 <kyk_97@mail.ru>
  * 
- * fs is free software: you can redistribute it and/or modify it
+ * server is free software: you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  * 
- * fs is distributed in the hope that it will be useful, but
+ * server is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
  * See the GNU General Public License for more details.
@@ -17,9 +17,12 @@
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <memory.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
 #include <math.h>
 #include <assert.h>
 #include "string.h"
@@ -36,6 +39,10 @@ const int block_in_block1024 = 1024;
 char magic_number[16] = "1123581321345589";
 
 
+const int command_size = 8;
+const int first_arg_size = 8;
+const int second_arg_size = 1024;
+const int input_size = 1048;
 
 char* Concatenate(char* a, char* b) {
     char* res = (char *)malloc(1 + strlen(a)+ strlen(b));
@@ -87,7 +94,6 @@ int WriteBlockStr(char* block, int pos) {
 			exit(1);
 		}
 		int pos_bool_block = number_block + superblock_size * block_size + sizeI;
-		//printf("Number_block %d\npos_bool_block %d\n", number_block, pos_bool_block);	
     	fseek(save_file, pos_bool_block, SEEK_SET);
     	fwrite("1", 1, 1, save_file);
 		
@@ -106,8 +112,6 @@ int WriteBlockStr(char* block, int pos) {
     	fwrite(res, block_size, 1, save_file);
 		free(res);
 	}
-	//printf("pos %d\n", pos);
-	//printf("block %s\n", block);	
 	
     fseek(save_file, pos, SEEK_SET);
     fwrite(block, block_size, 1, save_file);
@@ -123,9 +127,6 @@ int WriteBlockInt(int pos, int i) {
 		printf("Error in WriteBlockInt");
 		exit(1);
 	}
-	
-	//printf("out %s\n", out);
-	//printf("i %d\n", i);
     return WriteBlockStr (out, pos);
 }
 
@@ -135,9 +136,7 @@ int FindPosBlockInBlock1024(int pos, int number_block){
 
 int FindPosBlockInBlock1024InBlock1024(int pos, int number_block){
 	pos = ReadBlockLInt (pos + (number_block / block_in_block1024)*block_size);
-	//if (number_block >= block_in_block1024){
-		//printf("pos %d, number_block %d", pos, number_block);
-	//}
+
 	number_block %= block_in_block1024;
 	return FindPosBlockInBlock1024(pos, number_block);
 }
@@ -190,7 +189,6 @@ char* ReadFileInInode (int pos_inode){
 	}
 	char* res = NULL;
 	for (int i = 0; i < size; i++){
-		//printf("pos_inode %d, i %d, block %s", pos_inode, i, ReadBlockInInode (pos_inode, i));
         if(res == NULL) {
             res = ReadBlockInInode (pos_inode, i);
         } else {
@@ -223,8 +221,6 @@ void WriteFileInInode (char* buff, int pos_inode){
 	WriteBlockInt (pos_inode, size);
 	WriteBlockInt (pos_inode + block_size, is_file);
 	
-	//printf("size %d\n", size);
-	//printf("is_file %d\n", is_file);
 	for(int i = 2; i < min(block_in_inode, size + 2); i++){
 		WriteBlockStr (buff + (i - 2) * block_size, pos_inode + i * block_size);		
 	}
@@ -271,11 +267,6 @@ void WriteFileInInode (char* buff, int pos_inode){
 			for(int j = 1; j < size; j++){
 				WriteBlockStr (buff + j * block_size, -1);
 			}
-			//for(int i = 0; i < n + 1; i++){
-			//	int t = pos_b1024 + i * block_size;
-			//	printf("number in b1024 %d, in block %ld\n", 
-			//	       t, ReadBlockLInt (t));
-			//}
 			
 		}
 
@@ -352,9 +343,6 @@ long int GetFreeInode(){
     fwrite("1", 1, 1, save_file);	
 	int pos_inode = superblock_size * block_size + sizeI + sizeB + 
 		(sizeI - free_inodes) * inode_size;
-	
-	//printf("pos_number_inode %d\n", pos_number_inode);
-	//printf("pos_inode %d\n", pos_inode);
 	return pos_inode; 
 }
 
@@ -392,10 +380,6 @@ int FindNumberCatalogInCatalogInode(int pos_inode, char* name, int is_file){//na
 		char* catalog_name = GetNameInCatalog(catalog);
 		int catalog_pos = GetPosInCatalog (catalog);
 		int is_file_in_pos_inode = ReadBlockLInt (catalog_pos + block_size); 
-		//printf("%i %s %i %i\n", i, catalog, is_file, is_file_in_pos_inode);
-		//printf("pos = %i\n", catalog_pos);		
-		//printf("size %li\n", ReadBlockLInt (catalog_pos));
-		//printf("is_file %li\n", ReadBlockLInt (catalog_pos + block_size));
 		if (strcmp(name, catalog_name) == 0 && is_file == is_file_in_pos_inode){			
 			free(catalog);
 			free(catalog_name);
@@ -407,11 +391,11 @@ int FindNumberCatalogInCatalogInode(int pos_inode, char* name, int is_file){//na
 	return -1;
 }
 
-void DeleteCatalogInCatalogInode(int pos_inode, char * name, int is_file){ //name catalog
+void DeleteCatalogInCatalogInode(int pos_inode, char * name, int is_file, int sock){ //name catalog
 	int number_catalog = FindNumberCatalogInCatalogInode(pos_inode, name, is_file);
 	if (number_catalog == -1){
-		if (is_file) printf("Don't find file %s.text\n", name); 
-		else printf("Don't find catalog %s\n", name); 
+		if (is_file) send_answer(sock, "Don't find file %s.text", name); 
+		else send_answer(sock, "Don't find catalog %s", name); 
 		return;
 	}
 	int size = ReadBlockLInt (pos_inode);
@@ -423,7 +407,7 @@ void DeleteCatalogInCatalogInode(int pos_inode, char * name, int is_file){ //nam
 		int pos = ReadBlockLInt (pos_inode + block_in_inode*block_size);
 		number_catalog -= block_in_inode - 2;
 		if (number_catalog > 1024){
-			printf("Inode catalog decrease more then 1036 catlaog! Catalog can't delete\n");			
+			send_answer(sock, "Inode catalog decrease more then 1036 catlaog! Catalog can't delete");			
 		}
 		else{
 			WriteBlockStr(catalog, pos + number_catalog * block_size);			
@@ -435,10 +419,13 @@ void DeleteCatalogInCatalogInode(int pos_inode, char * name, int is_file){ //nam
 	return;	
 }
 
-void LsCatalog(int pos_inode){
+char* LsCatalog(int pos_inode){
+	
+	char *ans = (char*)malloc(sizeof(char) * 1);
+	ans[0] = ' ';
 	if (ReadBlockLInt (pos_inode + block_size) == 1){
-		printf("Ls catalog in file! Catalog can't ls\n");
-		return;
+		strcat(ans, "Ls catalog in file! Catalog can't ls\n");
+		return ans;
 	}
 	int size = ReadBlockLInt (pos_inode);
 	for (int i = 2; i < size; i++){
@@ -448,25 +435,25 @@ void LsCatalog(int pos_inode){
 		if (ReadBlockLInt (pos + block_size) == 1){
 			strcat(catalog_name, ".text");
 		}
-		printf("% 16s", catalog_name);
-		free(catalog);
+		strcat(catalog_name, "    ");
+		ans = Concatenate(ans, catalog);		
 		free(catalog_name);
 	}
-	printf("\n");
+	return ans;
 }
 
-void Cat(int pos_catalog_inode, char* name){//name without .text
+void Cat(int pos_catalog_inode, char* name, int sock){//name without .text
 	int number = FindNumberCatalogInCatalogInode(pos_catalog_inode, name, 1);
 	if (number == -1){
-		printf("Don't find file %s.text\n", name);
+        send_answer(sock, "Don't find file %s.text", name);
 		return;
 	}	
 	char* catalog = ReadBlockInInode (pos_catalog_inode, number);		
 	int pos_file_inode = GetPosInCatalog (catalog);
 	free(catalog);
 	char* file = ReadFileInInode (pos_file_inode);
-	if (file != NULL) printf("%s\n", file);
-	else printf("\n");
+	if (file != NULL) send_answer(sock, file);
+	else send_answer(sock, "");
 	free(file);
 	return;
 }
@@ -537,99 +524,216 @@ char* GetName(char* t) {
     return ans;
 }
 
-int main()
-{
-	init();
-	
-	int size = 10000;
-    char* buff = (char*)malloc(size);
-	int pos_catalog_inode = PosInodeInNumperInode (0);
-	while(fgets (buff, size, stdin) != NULL) {
-        char* command = GetWord(buff);
-				
-		char* tmp = GetWord(buff + strlen(command) + 1);
-		char* name = GetName(tmp);
-		int is_file = (strncmp(name, tmp, strlen(tmp)) != 0);
-		int number1 = FindNumberCatalogInCatalogInode(pos_catalog_inode, 
-			                                             name, 1);
-		
-		if (strcmp(command, "ls") == 0) {
-			LsCatalog(pos_catalog_inode);
-        } else if (strcmp(command, "exit") == 0) {
+int safe_parse_input(int sock, char* input, short first_size, short second_size, short third_size,
+                     char* first_arg, char* second_arg, char* third_arg) {
+    memset(first_arg, '\0', first_size + 1);
+    memset(second_arg, '\0', second_size + 1);
+    memset(third_arg, '\0', third_size + 1);
+
+    short k = 0;
+    short sizes[3] = {first_size, second_size, third_size};
+    char* args[3] = {first_arg, second_arg, third_arg};
+    int current_arg = 0;
+    short j = 0;
+    while ((k < strlen(input)) && (current_arg < 3) && (input[k] != '\n')) {
+        while ((j < sizes[current_arg]) && (input[k] != ' ') && (k < strlen(input)) && (input[k] != '\n')) {
+            args[current_arg][j] = input[k];
+            j++;
+            k++;
+        }
+
+        if ((j == sizes[current_arg]) && (input[k] != ' ') && (k < strlen(input)) && (input[k] != '\n')) {
+            send_answer(sock, "Argument too long!");
             break;
-        } else if (strcmp(command, "..") == 0) {
-			char* catalog = ReadBlockInInode (pos_catalog_inode, 0);
-			if (pos_catalog_inode != PosInodeInNumperInode (0)){
-			    int pos_perent = GetPosInCatalog (catalog);			    
-                pos_catalog_inode = pos_perent;   
-			}
-			free(catalog);
-        } else if (strcmp(command, "touch") == 0) {
-			
-			int number = FindNumberCatalogInCatalogInode(pos_catalog_inode, 
+        }
+        j = 0;
+        current_arg++;
+        k++;
+    }
+
+
+    return current_arg;
+}
+
+void send_answer(int sock, char* answer){
+    char buf[16];
+    sprintf(buf, "%i", strlen(answer));
+    send(sock, buf, 16, 0);
+    send(sock, answer, strlen(answer), 0);
+}
+
+char* get_answer(int sock){
+    char buf[16];
+    recv(sock, buf, 16, 0);
+    int size_of_answer;
+    sscanf(buf, "%i", &size_of_answer);
+
+    char *answer = malloc(sizeof(char) * (size_of_answer + 1));
+    memset(answer, 0, (size_of_answer + 1));
+
+    recv(sock, answer, (size_t)size_of_answer, 0);
+    return answer;
+}
+
+void Server_run() {
+    daemon(0, 0);
+    int sock, listener;
+    struct sockaddr_in addr;
+
+    listener = socket(AF_INET, SOCK_STREAM, 0);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(8888);
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    bind(listener, (struct sockaddr *) &addr, sizeof(addr));
+    listen(listener, 1);
+    _Bool running = 1;
+
+	init();
+	int pos_catalog_inode = PosInodeInNumperInode (0);
+	
+    while (running == 1) {
+        sock = accept(listener, NULL, NULL);
+
+        char command[command_size + 1]; // +1 for terminating symbol
+        char first_argument[first_arg_size + 1];
+        char second_argument[second_arg_size + 1];
+        char input_line[input_size + 1];
+
+        while (recv(sock, input_line, input_size, 0) != 0) {
+            int number_of_arguments = 
+				safe_parse_input(sock, input_line, command_size, first_arg_size,
+				                 second_arg_size, command, first_argument,
+				                 second_argument);
+			char* name = GetName(first_argument);
+			int is_file = (strncmp(name, first_argument, strlen(first_argument)) != 0);
+			int number1 = FindNumberCatalogInCatalogInode(pos_catalog_inode, 
 			                                             name, 1);
-			//printf("find number %i\n", number);
-			if (number == -1){					
-				AddFileInCatalog (pos_catalog_inode, name, buff + 
-				                  strlen(command) + 1 + strlen(name) + 1);
+
+            if(strcmp(command, "ls") == 0){
+                char* output = LsCatalog(pos_catalog_inode);
+                send_answer(sock, output);
+                free(output);
+            }
+            else if (strcmp(command, "makedir") == 0){
+				if(number_of_arguments == 1)
+                    send_answer(sock, "Not sufficient arguments!");
+                else {					
+					if (is_file) {	
+                    	send_answer(sock,"It is name f file!");
+					}else{
+						int number = FindNumberCatalogInCatalogInode(pos_catalog_inode, name, 0);
+						if (number == -1){				
+							int pos_inode = GetFreeInode ();
+							char * catalog = GetCatalog (pos_inode, name);
+							char * perent = ReadBlockStr (pos_catalog_inode + 3 * block_size);
+							AddCatalogInCatalogInode (pos_catalog_inode, catalog);	
+							CreateCatalogInode(perent, catalog);
+							free(perent);		
+							free(catalog);	
+                    		send_answer(sock, "");		
+						}
+						else{
+                    		send_answer(sock,"There is already a folder with this name");
+						}
+					}
+				}                
+            }
+            else if (strcmp(command, "touch") == 0){
+                if(number_of_arguments < 3)
+                    send_answer(sock, "Not sufficient arguments!");
+                else {									
+					int number = FindNumberCatalogInCatalogInode(pos_catalog_inode, 
+			                                             name, 1);
+					if (number == -1){					
+						AddFileInCatalog (pos_catalog_inode, name, second_argument);
+					}
+					else{
+						char* catalog = ReadBlockInInode (pos_catalog_inode, number);		
+						int pos_file_inode = GetPosInCatalog (catalog);
+						free(catalog);
+	            		WriteFileInInode (second_argument, pos_file_inode);
+					}						
+                    send_answer(sock, "");
+				}
 			}
-			else{
-				char* catalog = ReadBlockInInode (pos_catalog_inode, number);		
-				int pos_file_inode = GetPosInCatalog (catalog);
+            else if (strcmp(command, "rm") == 0){
+                if(number_of_arguments == 1)
+                    send_answer(sock, "Not sufficient arguments!");
+                else {
+					DeleteCatalogInCatalogInode(pos_catalog_inode, name, is_file, sock);	
+                    send_answer(sock, "");
+                }
+            }
+            else if (strcmp(command, "cat") == 0){
+                if(number_of_arguments == 1)
+                    send_answer(sock, "Not sufficient arguments!");
+                else {
+					if (!is_file){
+                        send_answer(sock, "Unknown command");                		
+					}
+					else{
+						Cat(pos_catalog_inode, name, sock);
+					}
+                }
+            }
+
+            else if (strcmp(command, "cd") == 0){
+                if(number_of_arguments == 1)
+                    send_answer(sock, "Not sufficient arguments!");
+                else {
+					if (is_file) {	
+						send_answer(sock, "It is name f file!");
+					}else{
+						int number = FindNumberCatalogInCatalogInode(pos_catalog_inode, name, 0);
+						if (number == -1){
+							send_answer(sock, "Don't find catalog"); 
+						}
+						else{
+							char* catalog = ReadBlockInInode (pos_catalog_inode, number);		
+							int pos_inode = GetPosInCatalog (catalog);
+							free(catalog);
+            				pos_catalog_inode = pos_inode;
+                   			send_answer(sock, "");
+						}
+					}	
+                }
+            }
+			else if (strcmp(command, "..") == 0) {
+				char* catalog = ReadBlockInInode (pos_catalog_inode, 0);
+				if (pos_catalog_inode != PosInodeInNumperInode (0)){
+			    	int pos_perent = GetPosInCatalog (catalog);			    
+                	pos_catalog_inode = pos_perent;
+				}
 				free(catalog);
-	            WriteFileInInode (buff + strlen(command) + 1 + strlen(tmp) + 1,
-	                              pos_file_inode);
+                send_answer(sock, "");
 			}
-        } else if (strcmp(command, "makedir") == 0) {
-			if (is_file) {	
-				printf("It is name f file!\n");
-			}else{
-				int number = FindNumberCatalogInCatalogInode(pos_catalog_inode, 
-			                                             name, 0);
-				if (number == -1){				
-					int pos_inode = GetFreeInode ();
-					char * catalog = GetCatalog (pos_inode, name);
-					char * perent = ReadBlockStr (pos_catalog_inode + 3 * block_size);
-					AddCatalogInCatalogInode (pos_catalog_inode, catalog);	
-					CreateCatalogInode(perent, catalog);
-					free(perent);		
-					free(catalog);			
-				}
-				else{
-					printf("There is already a folder with name %s \n", name);
-				}
-			}
-        } else if (strcmp(command, "cd") == 0) {
-			if (is_file) {	
-				printf("It is name f file!\n");
-			}else{
-				int number = FindNumberCatalogInCatalogInode(pos_catalog_inode, name, 0);
-				if (number == -1){
-					printf("Don't find catalog %s\n", name); 
-				}
-				else{
-					char* catalog = ReadBlockInInode (pos_catalog_inode, number);		
-					int pos_inode = GetPosInCatalog (catalog);
-					free(catalog);
-            		pos_catalog_inode = pos_inode;
-				}
-			}
-        } else if (strcmp(command, "rm") == 0) {			
-			DeleteCatalogInCatalogInode(pos_catalog_inode, name, is_file);			
-        } else if (strcmp(command, "cat") == 0) {
-			if (!is_file){
-                printf("Unknown command %s %s \n", command, tmp);
-			}
-			else{
-				Cat(pos_catalog_inode, name);
-			}
-        } else{
-            printf("Unknown command %s\n", command);
+
+            else if (strcmp(command, "help") == 0){
+                send_answer(sock, "ls to list files in current directory\ncd $name$ to go to directory named $name$ in current directory\n"
+                                  "makedir $name$ to create directory named $name$\ntouch $name$ $file text$ to create a file "
+                                  "named $name$ with text of file $file text$\nrm $name$ to delete directory named $name$ "
+                                  "and all files in it\nrm $name.text$ to delete file named $name.text$ from directory\n"
+                                  "$..$ to go to perent of current directory\nexit to save and exit");
+            }
+            else if (strcmp(command, "exit") == 0) {
+                send_answer(sock, "");
+                break;
+            }
+            else if (strcmp(command, "stop") == 0){
+                running = 0;
+                send_answer(sock, "");
+                break;
+            }
+            else {
+                send_answer(sock, "Unknown command");
+            }				
+			free(name);
+				
         }
-		free(command);
-		free(name);
-		free(tmp);
-        }
-	free(buff);
-	return (0);
+    	close(sock);        
+    }
+}
+
+int main(int argc, char* argv[]) {
+    Server_run();
 }

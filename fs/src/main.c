@@ -87,8 +87,7 @@ int WriteBlockStr(char* block, int pos) {
 			exit(1);
 		}
 		int pos_bool_block = number_block + superblock_size * block_size + sizeI;
-		//printf("Number_block %d\npos_bool_block %d\n", number_block, pos_bool_block);	
-    	fseek(save_file, pos_bool_block, SEEK_SET);
+		fseek(save_file, pos_bool_block, SEEK_SET);
     	fwrite("1", 1, 1, save_file);
 		
     	fseek(save_file, 6 * block_size, SEEK_SET);		
@@ -106,10 +105,7 @@ int WriteBlockStr(char* block, int pos) {
     	fwrite(res, block_size, 1, save_file);
 		free(res);
 	}
-	//printf("pos %d\n", pos);
-	//printf("block %s\n", block);	
-	
-    fseek(save_file, pos, SEEK_SET);
+	fseek(save_file, pos, SEEK_SET);
     fwrite(block, block_size, 1, save_file);
     fclose(save_file);    
     return pos;
@@ -123,10 +119,7 @@ int WriteBlockInt(int pos, int i) {
 		printf("Error in WriteBlockInt");
 		exit(1);
 	}
-	
-	//printf("out %s\n", out);
-	//printf("i %d\n", i);
-    return WriteBlockStr (out, pos);
+	return WriteBlockStr (out, pos);
 }
 
 int FindPosBlockInBlock1024(int pos, int number_block){
@@ -135,9 +128,6 @@ int FindPosBlockInBlock1024(int pos, int number_block){
 
 int FindPosBlockInBlock1024InBlock1024(int pos, int number_block){
 	pos = ReadBlockLInt (pos + (number_block / block_in_block1024)*block_size);
-	//if (number_block >= block_in_block1024){
-		//printf("pos %d, number_block %d", pos, number_block);
-	//}
 	number_block %= block_in_block1024;
 	return FindPosBlockInBlock1024(pos, number_block);
 }
@@ -190,8 +180,7 @@ char* ReadFileInInode (int pos_inode){
 	}
 	char* res = NULL;
 	for (int i = 0; i < size; i++){
-		//printf("pos_inode %d, i %d, block %s", pos_inode, i, ReadBlockInInode (pos_inode, i));
-        if(res == NULL) {
+		if(res == NULL) {
             res = ReadBlockInInode (pos_inode, i);
         } else {
             res = Concatenate(res, ReadBlockInInode (pos_inode, i));
@@ -222,9 +211,6 @@ void WriteFileInInode (char* buff, int pos_inode){
 	int is_file = 1;
 	WriteBlockInt (pos_inode, size);
 	WriteBlockInt (pos_inode + block_size, is_file);
-	
-	//printf("size %d\n", size);
-	//printf("is_file %d\n", is_file);
 	for(int i = 2; i < min(block_in_inode, size + 2); i++){
 		WriteBlockStr (buff + (i - 2) * block_size, pos_inode + i * block_size);		
 	}
@@ -271,14 +257,7 @@ void WriteFileInInode (char* buff, int pos_inode){
 			for(int j = 1; j < size; j++){
 				WriteBlockStr (buff + j * block_size, -1);
 			}
-			//for(int i = 0; i < n + 1; i++){
-			//	int t = pos_b1024 + i * block_size;
-			//	printf("number in b1024 %d, in block %ld\n", 
-			//	       t, ReadBlockLInt (t));
-			//}
-			
 		}
-
 	} 
 }
 
@@ -303,7 +282,6 @@ char* GetCatalog(int pos_inode, char* name){
 	char* ans= (char *)malloc(16 * sizeof(char)); //block_size
 	strncpy(ans, res, 8);//block_size/2
 	strncat(ans, name, 8);
-	//printf("%s\n", ans);
 	return ans;
 }
 
@@ -352,9 +330,6 @@ long int GetFreeInode(){
     fwrite("1", 1, 1, save_file);	
 	int pos_inode = superblock_size * block_size + sizeI + sizeB + 
 		(sizeI - free_inodes) * inode_size;
-	
-	//printf("pos_number_inode %d\n", pos_number_inode);
-	//printf("pos_inode %d\n", pos_inode);
 	return pos_inode; 
 }
 
@@ -392,10 +367,6 @@ int FindNumberCatalogInCatalogInode(int pos_inode, char* name, int is_file){//na
 		char* catalog_name = GetNameInCatalog(catalog);
 		int catalog_pos = GetPosInCatalog (catalog);
 		int is_file_in_pos_inode = ReadBlockLInt (catalog_pos + block_size); 
-		//printf("%i %s %i %i\n", i, catalog, is_file, is_file_in_pos_inode);
-		//printf("pos = %i\n", catalog_pos);		
-		//printf("size %li\n", ReadBlockLInt (catalog_pos));
-		//printf("is_file %li\n", ReadBlockLInt (catalog_pos + block_size));
 		if (strcmp(name, catalog_name) == 0 && is_file == is_file_in_pos_inode){			
 			free(catalog);
 			free(catalog_name);
@@ -540,22 +511,7 @@ char* GetName(char* t) {
 int main()
 {
 	init();
-	//char* str = "This is sparta!";
-	//printf("%d\n", PosInodeInNumperInode (0));
-	//AddFileInCatalog(PosInodeInNumperInode (0), "nemec", str);
-	//char* str1 = ReadFileInInode (pos);
-	//printf("%d\n", PosInodeInNumperInode (0));
-	//printf("%d\n", strcmp(str, str1));
-	//LsCatalog (PosInodeInNumperInode (0));
-	//Cat(PosInodeInNumperInode (0), "nemec");
-	//char * a = GetCatalog (123456789, "nameсnamec123456789");
-	//char * name = GetNameInCatalog(a);
-	//int pos = GetPosInCatalog(a);
-	//printf("%s\nname %s\npos %d\n", a, name, pos);
 	
-	//free(a);
-	//free(str);
-	//free(str1);
 	int size = 10000;
     char* buff = (char*)malloc(size);
 	int pos_catalog_inode = PosInodeInNumperInode (0);
